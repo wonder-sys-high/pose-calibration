@@ -2,12 +2,13 @@ import streamlit as st
 from streamlit_webrtc import webrtc_streamer
 import av
 import cv2
-import mediapipe as mp
+
+# エラーを回避するため、MediaPipeの機能を「直接」指名して読み込む
+from mediapipe.python.solutions import pose as mp_pose
+from mediapipe.python.solutions import drawing_utils as mp_drawing
 
 # MediaPipeの姿勢推定モデルを初期化
-mp_pose = mp.solutions.pose
 pose = mp_pose.Pose(min_detection_confidence=0.5, min_tracking_confidence=0.5)
-mp_drawing = mp.solutions.drawing_utils
 
 st.title("姿勢AI判定テスト (Streamlit版)")
 st.write("カメラへのアクセスを許可し、全身が映るようにしてください。")
