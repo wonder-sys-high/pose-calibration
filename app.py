@@ -4,12 +4,13 @@ import av
 import cv2
 import time
 import queue
+import io  # 画像データを変換するために追加
 
 # エラーを回避するため、MediaPipeの機能を直接読み込む
 from mediapipe.python.solutions import pose as mp_pose
 from mediapipe.python.solutions import drawing_utils as mp_drawing
 
-# 最新のフレーム（画像）を一時保存するための「箱」を用意
+# 最新のフレーム（画像）を一時保存するための「箱」
 @st.cache_resource
 def get_frame_queue():
     return queue.Queue(maxsize=1)
@@ -65,7 +66,6 @@ def video_frame_callback(frame):
         cv2.line(img, (hip_x, 0), (hip_x, h), (255, 255, 0), 2)
         cv2.putText(img, status_text, (10, 40), cv2.FONT_HERSHEY_SIMPLEX, 0.8, color, 2, cv2.LINE_AA)
 
-    # --- 追加部分 ---
     # 線や文字が描かれた状態の最新画像を「箱」に入れる
     if not frame_queue.empty():
         try:
@@ -83,11 +83,10 @@ webrtc_ctx = webrtc_streamer(
     rtc_configuration={"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]}
 )
 
-# --- 追加部分：タイマー撮影機能 ---
-# カメラが起動している時だけ「撮影ボタン」を表示する
+# タイマー撮影＆即保存機能
 if webrtc_ctx.state.playing:
     st.markdown("---")
-    if st.button("📸 30秒後に撮影する"):
+    if st.button("📸 30秒後に撮影して保存"):
         countdown_placeholder = st.empty()
         
         # 30秒のカウントダウン
@@ -95,11 +94,24 @@ if webrtc_ctx.state.playing:
             countdown_placeholder.markdown(f"### 撮影まであと **{i}** 秒...")
             time.sleep(1)
             
-        countdown_placeholder.markdown("### カシャ！📸")
+        countdown_placeholder.markdown("### 撮影完了！下のボタンから保存してください👇")
         
-        # 最新の画像を箱から取り出して画面に表示
+        # 最新の画像を箱から取り出す
         if not frame_queue.empty():
             snapshot = frame_queue.get()
-            st.image(snapshot, channels="BGR", caption="あなたの姿勢（客観データ）")
+            
+            # プレビュー表示はせず、画像をJPEGデータに変換
+            is_success, buffer = cv2.imencode(".jpg", snapshot)
+            if is_success:
+                io_buf = io.BytesIO(buffer)
+                
+                # Streamlit標準のダウンロードボタンを表示
+                st.download_button(
+                    label="📥 画像をスマホに保存する",
+                    data=io_buf.getvalue(),
+                    file_name="pose_calibration.jpg",
+                    mime="image/jpeg",
+                    type="primary" # ボタンを青く目立たせる
+                )
         else:
             st.warning("画像が取得できませんでした。カメラに少し映った状態で再度お試しください。")
