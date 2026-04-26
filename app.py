@@ -6,7 +6,7 @@ from PIL import Image
 from mediapipe.python.solutions import pose as mp_pose
 from mediapipe.python.solutions import drawing_utils as mp_drawing
 
-# MediaPipeの姿勢推定モデルを初期化（ダウンロード権限エラーを避けるため complexity=1 に設定）
+# MediaPipeの姿勢推定モデルを初期化（最高精度レベル1）
 pose = mp_pose.Pose(
     static_image_mode=True,
     min_detection_confidence=0.5,
@@ -39,24 +39,29 @@ if uploaded_file is not None:
     if results.pose_landmarks:
         annotated_img = img_rgb.copy()
         
-        # ベースの骨格線を「薄いグレー」で控えめに描画 (B, G, R)
+        # ベースの骨格線を「薄いグレー」で控えめに描画
         mp_drawing.draw_landmarks(
             annotated_img, 
             results.pose_landmarks, 
             mp_pose.POSE_CONNECTIONS,
-            mp_drawing.DrawingSpec(color=(200, 200, 200), thickness=2, circle_radius=2), # 関節の点（グレー）
-            mp_drawing.DrawingSpec(color=(150, 150, 150), thickness=1, circle_radius=1)  # 骨格の線（グレー）
+            mp_drawing.DrawingSpec(color=(200, 200, 200), thickness=2, circle_radius=2), 
+            mp_drawing.DrawingSpec(color=(150, 150, 150), thickness=1, circle_radius=1)  
         )
 
+        # 必要な関節ポイントを取得（左半身を基準）
         landmarks = results.pose_landmarks.landmark
         ear = landmarks[mp_pose.PoseLandmark.LEFT_EAR.value]
         shoulder = landmarks[mp_pose.PoseLandmark.LEFT_SHOULDER.value]
         hip = landmarks[mp_pose.PoseLandmark.LEFT_HIP.value]
+        knee = landmarks[mp_pose.PoseLandmark.LEFT_KNEE.value]
+        ankle = landmarks[mp_pose.PoseLandmark.LEFT_ANKLE.value]
 
         h, w, _ = annotated_img.shape
         ear_x, ear_y = int(ear.x * w), int(ear.y * h)
         shoulder_x, shoulder_y = int(shoulder.x * w), int(shoulder.y * h)
         hip_x, hip_y = int(hip.x * w), int(hip.y * h)
+        knee_x, knee_y = int(knee.x * w), int(knee.y * h)
+        ankle_x, ankle_y = int(ankle.x * w), int(ankle.y * h)
 
         head_shift = ear_x - shoulder_x
         body_shift = shoulder_x - hip_x
@@ -65,17 +70,20 @@ if uploaded_file is not None:
         threshold = w * 0.04 
 
         # --- 可視化ロジック ---
-        # 1. 理想の重力線（鮮やかなブルーで太く）
-        cv2.line(annotated_img, (hip_x, 0), (hip_x, h), (255, 200, 50), 3)
+        # 1. 理想の姿勢ライン（ブルー：腰を基準とした真っ直ぐな縦線）
+        cv2.line(annotated_img, (hip_x, 0), (hip_x, h), (50, 150, 255), 3)
         
-        # 2. 実際の首の角度ライン（警告のオレンジレッド）
-        cv2.line(annotated_img, (shoulder_x, shoulder_y), (ear_x, ear_y), (50, 100, 255), 4)
+        # 2. あなたの実際の骨格ライン（オレンジ：全身を繋ぐ）
+        cv2.line(annotated_img, (ear_x, ear_y), (shoulder_x, shoulder_y), (255, 100, 50), 4) # 首
+        cv2.line(annotated_img, (shoulder_x, shoulder_y), (hip_x, hip_y), (255, 100, 50), 4) # 胴体
+        cv2.line(annotated_img, (hip_x, hip_y), (knee_x, knee_y), (255, 100, 50), 4)         # 太もも
+        cv2.line(annotated_img, (knee_x, knee_y), (ankle_x, ankle_y), (255, 100, 50), 4)     # すね
 
         # 診断結果画像の表示
-        st.image(annotated_img, caption="ブルー：理想の姿勢ライン / オレンジ：あなたの実際の首の傾き", use_column_width=True)
+        st.image(annotated_img, caption="ブルー：理想の姿勢ライン / オレンジ：あなたの実際の姿勢", use_column_width=True)
 
         # ユーザーに「正解」を直感的に伝える解説ブロック
-        st.info("💡 **【画像の見方】青とオレンジの線がピタッと重なっていれば100点満点！**\n\n青い縦線（理想のライン）の上に、あなたの耳と肩が乗っていれば、首や腰に最も負担のかからない正しい姿勢です。")
+        st.info("💡 **【画像の見方】青とオレンジの線がピタッと重なっていれば100点満点！**\n\n青い縦線（理想のライン）の上に、あなたの全身のオレンジ線（耳・肩・腰・膝・足首）が乗っていれば、首や腰に最も負担のかからない正しい姿勢です。")
 
         st.markdown("## 📊 詳細診断レポート")
 
