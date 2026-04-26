@@ -10,7 +10,7 @@ from mediapipe.python.solutions import drawing_utils as mp_drawing
 pose = mp_pose.Pose(
     static_image_mode=True,
     min_detection_confidence=0.5,
-    model_complexity=1  # ここを2から1に変更しました
+    model_complexity=1
 )
 
 st.title("姿勢キャリブレーション")
@@ -39,12 +39,13 @@ if uploaded_file is not None:
     if results.pose_landmarks:
         annotated_img = img_rgb.copy()
         
+        # ベースの骨格線を「薄いグレー」で控えめに描画 (B, G, R)
         mp_drawing.draw_landmarks(
             annotated_img, 
             results.pose_landmarks, 
             mp_pose.POSE_CONNECTIONS,
-            mp_drawing.DrawingSpec(color=(0, 255, 0), thickness=3, circle_radius=4),
-            mp_drawing.DrawingSpec(color=(0, 0, 255), thickness=2, circle_radius=2)
+            mp_drawing.DrawingSpec(color=(200, 200, 200), thickness=2, circle_radius=2), # 関節の点（グレー）
+            mp_drawing.DrawingSpec(color=(150, 150, 150), thickness=1, circle_radius=1)  # 骨格の線（グレー）
         )
 
         landmarks = results.pose_landmarks.landmark
@@ -60,12 +61,21 @@ if uploaded_file is not None:
         head_shift = ear_x - shoulder_x
         body_shift = shoulder_x - hip_x
         
+        # 画面幅に応じた厳密な閾値（約4%）
         threshold = w * 0.04 
 
-        cv2.line(annotated_img, (hip_x, 0), (hip_x, h), (255, 255, 0), 4)
-        cv2.line(annotated_img, (shoulder_x, shoulder_y), (ear_x, ear_y), (255, 0, 255), 4)
+        # --- 可視化ロジック ---
+        # 1. 理想の重力線（鮮やかなブルーで太く）
+        cv2.line(annotated_img, (hip_x, 0), (hip_x, h), (255, 200, 50), 3)
+        
+        # 2. 実際の首の角度ライン（警告のオレンジレッド）
+        cv2.line(annotated_img, (shoulder_x, shoulder_y), (ear_x, ear_y), (50, 100, 255), 4)
 
-        st.image(annotated_img, caption="AI骨格解析データ（水色: 理想の重力線 / 紫: 実際の首の角度）", use_column_width=True)
+        # 診断結果画像の表示
+        st.image(annotated_img, caption="ブルー：理想の姿勢ライン / オレンジ：あなたの実際の首の傾き", use_column_width=True)
+
+        # ユーザーに「正解」を直感的に伝える解説ブロック
+        st.info("💡 **【画像の見方】青とオレンジの線がピタッと重なっていれば100点満点！**\n\n青い縦線（理想のライン）の上に、あなたの耳と肩が乗っていれば、首や腰に最も負担のかからない正しい姿勢です。")
 
         st.markdown("## 📊 詳細診断レポート")
 
