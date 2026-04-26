@@ -3,15 +3,14 @@ import cv2
 import numpy as np
 from PIL import Image
 
-# 必要なMediaPipeモジュールを直接読み込み
 from mediapipe.python.solutions import pose as mp_pose
 from mediapipe.python.solutions import drawing_utils as mp_drawing
 
-# MediaPipeの姿勢推定モデルを「静止画・最高精度モード」で初期化
+# MediaPipeの姿勢推定モデルを初期化（ダウンロード権限エラーを避けるため complexity=1 に設定）
 pose = mp_pose.Pose(
-    static_image_mode=True,       # 動画ではなく静止画モード
+    static_image_mode=True,
     min_detection_confidence=0.5,
-    model_complexity=2            # 0〜2の中で最も高精度・重いモデルを使用
+    model_complexity=1  # ここを2から1に変更しました
 )
 
 st.title("姿勢キャリブレーション")
@@ -23,7 +22,7 @@ st.info("💡 **【撮影のコツ】**\n下のボタンを押し、「写真を
 uploaded_file = st.file_uploader("📸 ここをタップして撮影 / 写真を選択", type=["jpg", "jpeg", "png"])
 
 if uploaded_file is not None:
-    # 画像の読み込みと前処理（OpenCVで扱える形式へ変換）
+    # 画像の読み込みと前処理
     image = Image.open(uploaded_file)
     img_array = np.array(image)
     
@@ -35,23 +34,19 @@ if uploaded_file is not None:
 
     st.markdown("---")
     with st.spinner("AIが骨格レベルで詳細に解析しています..."):
-        # AI推論の実行
         results = pose.process(img_rgb)
 
     if results.pose_landmarks:
-        # 描画用の画像コピー
         annotated_img = img_rgb.copy()
         
-        # 関節と骨格線の描画
         mp_drawing.draw_landmarks(
             annotated_img, 
             results.pose_landmarks, 
             mp_pose.POSE_CONNECTIONS,
-            mp_drawing.DrawingSpec(color=(0, 255, 0), thickness=3, circle_radius=4), # 関節の点
-            mp_drawing.DrawingSpec(color=(0, 0, 255), thickness=2, circle_radius=2)  # 骨格の線
+            mp_drawing.DrawingSpec(color=(0, 255, 0), thickness=3, circle_radius=4),
+            mp_drawing.DrawingSpec(color=(0, 0, 255), thickness=2, circle_radius=2)
         )
 
-        # 診断に必要な座標の取得（左半身を基準）
         landmarks = results.pose_landmarks.landmark
         ear = landmarks[mp_pose.PoseLandmark.LEFT_EAR.value]
         shoulder = landmarks[mp_pose.PoseLandmark.LEFT_SHOULDER.value]
@@ -62,19 +57,14 @@ if uploaded_file is not None:
         shoulder_x, shoulder_y = int(shoulder.x * w), int(shoulder.y * h)
         hip_x, hip_y = int(hip.x * w), int(hip.y * h)
 
-        # ズレの計算（腰を絶対的な基準ゼロとする）
         head_shift = ear_x - shoulder_x
         body_shift = shoulder_x - hip_x
         
-        # 画面幅に応じた厳密な閾値（約4%）
         threshold = w * 0.04 
 
-        # 可視化ロジック：理想の垂直基準線（水色）
         cv2.line(annotated_img, (hip_x, 0), (hip_x, h), (255, 255, 0), 4)
-        # 実際の首の角度ライン（紫）
         cv2.line(annotated_img, (shoulder_x, shoulder_y), (ear_x, ear_y), (255, 0, 255), 4)
 
-        # 診断結果画像の表示
         st.image(annotated_img, caption="AI骨格解析データ（水色: 理想の重力線 / 紫: 実際の首の角度）", use_column_width=True)
 
         st.markdown("## 📊 詳細診断レポート")
