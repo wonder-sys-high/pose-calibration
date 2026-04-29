@@ -6,6 +6,30 @@ import numpy as np
 import queue
 import time
 
+# --- パスワード認証システム ---
+if "authenticated" not in st.session_state:
+    st.session_state["authenticated"] = False
+
+# 認証されていない場合はロック画面を表示して処理を止める
+if not st.session_state["authenticated"]:
+    st.title("🔒 姿勢キャリブレーション")
+    st.info("この記事の購入者限定ツールです。Note記事内に記載されているパスワードを入力してください。")
+    
+    pwd = st.text_input("パスワード", type="password")
+    if st.button("ロックを解除する", type="primary"):
+        if pwd == "neko":
+            st.session_state["authenticated"] = True
+            st.rerun() # 画面をリロードしてメインアプリへ
+        else:
+            st.error("パスワードが間違っています。")
+    
+    # パスワードが通るまではここから下のコードを一切実行しない
+    st.stop()
+
+# ==========================================
+# 以下、認証成功後に表示されるメインアプリ
+# ==========================================
+
 # MediaPipeの読み込み
 from mediapipe.python.solutions import pose as mp_pose
 from mediapipe.python.solutions import drawing_utils as mp_drawing
@@ -139,10 +163,10 @@ if webrtc_ctx.state.playing:
                 st.error("⚠️ 首が前に出ています（ストレートネック）")
                 st.write("約5kgもある重い頭を、首の筋肉だけで必死に支えている状態です。")
                 st.info("""
-                **💡 1分リセット：壁ピタッ！体操**
-                1. 壁に「かかと・お尻・肩甲骨」をピタッとつけて立ちます。
-                2. そのまま「後頭部」も壁にくっつけて5秒キープ。（目線はまっすぐ）
-                3. これを3回！正しい首の位置を体が思い出します。
+                **💡 1分リセット：壁ピタッ！二重あご体操**
+                1. 壁を背にして立ち、「かかと・お尻・背中」を壁にくっつけます。
+                2. 人差し指を「あごの先」に当て、あごをノド仏に向かって水平にグーッと押し込みます。（亀が首を引っ込める動き。上を向くのはNG！）
+                3. わざと一番ひどい「二重あご」を作ったまま、後頭部を壁にくっつけて5秒キープ。これを3回！
                 """)
             else:
                 st.success("✨ まっすぐな良い首です！")
