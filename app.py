@@ -16,17 +16,19 @@ def get_frame_queue():
 
 frame_queue = get_frame_queue()
 
-# AIモデルの初期化（★メモリー不足を防ぐため、最も軽量な「0」に変更）
+# AIモデルの初期化
+# model_complexity=1 はライブラリに内蔵されているため、
+# Streamlit CloudでのPermissionError（ダウンロード失敗）を回避できます。
 pose = mp_pose.Pose(
     static_image_mode=False,
     min_detection_confidence=0.5,
     min_tracking_confidence=0.5,
-    model_complexity=0  
+    model_complexity=1  
 )
 
 st.title("姿勢キャリブレーション")
 st.markdown("### リアルタイム・ガイド撮影")
-st.info("💡 **【使い方】**\n画面の**ブルーの縦線**に、あなたの耳・肩・腰が重なるように位置を調整してください。オレンジの線がまっすぐになれば理想的です。")
+st.info("💡 **【使い方】**\n画面の**ブルーの縦線**に、あなたの耳・肩・腰が重なるように調整してください。オレンジの線がまっすぐになれば理想的です。")
 
 def video_frame_callback(frame):
     img = frame.to_ndarray(format="bgr24")
@@ -35,7 +37,7 @@ def video_frame_callback(frame):
     results = pose.process(img_rgb)
 
     if results.pose_landmarks:
-        # 背景の骨格点は邪魔にならないよう極細に
+        # 背景の骨格点は邪魔にならないよう極細に（グレー）
         mp_drawing.draw_landmarks(
             img, 
             results.pose_landmarks, 
@@ -44,7 +46,7 @@ def video_frame_callback(frame):
             mp_drawing.DrawingSpec(color=(150, 150, 150), thickness=1, circle_radius=1)
         )
 
-        # 必要な関節ポイントの取得
+        # 必要な関節ポイントの取得（左半身を基準）
         landmarks = results.pose_landmarks.landmark
         ear = landmarks[mp_pose.PoseLandmark.LEFT_EAR.value]
         shoulder = landmarks[mp_pose.PoseLandmark.LEFT_SHOULDER.value]
@@ -62,14 +64,16 @@ def video_frame_callback(frame):
         p_knee = to_px(knee)
         p_ankle = to_px(ankle)
 
-        # --- ガイドラインの描画（太め設定） ---
+        # --- ガイドラインの描画（太めに設定） ---
         
         # 1. 理想の垂直ライン（ブルー）
+        # OpenCVのBGR順序に合わせ、鮮やかな青を指定 (B, G, R)
         cv2.line(img, (p_hip[0], 0), (p_hip[0], h), (255, 150, 50), 5)
         
         # 2. あなたの現在の骨格ライン（オレンジ）
+        # OpenCVのBGR順序に合わせ、警告のオレンジを指定 (B, G, R)
         line_color = (50, 100, 255)
-        line_thickness = 6
+        line_thickness = 7
         cv2.line(img, p_ear, p_shoulder, line_color, line_thickness)
         cv2.line(img, p_shoulder, p_hip, line_color, line_thickness)
         cv2.line(img, p_hip, p_knee, line_color, line_thickness)
@@ -93,18 +97,23 @@ webrtc_ctx = webrtc_streamer(
     media_stream_constraints={"video": True, "audio": False}
 )
 
-# 撮影ボタン
+# 撮影・診断結果の表示
 if webrtc_ctx.state.playing:
     st.markdown("---")
-    if st.button("📸 この姿勢で撮影（保存用ボタンを表示）", type="primary"):
+    if st.button("📸 この姿勢で撮影して保存する", type="primary"):
         if not frame_queue.empty():
             snapshot = frame_queue.get()
             is_success, buffer = cv2.imencode(".jpg", snapshot)
             if is_success:
-                st.image(snapshot, channels="BGR", caption="撮影された客観データ")
+                # 撮影した画像を表示（確認用）
+                st.image(snapshot, channels="BGR", caption="撮影されたデータ（主観と客観の比較）")
+                
+                # スマホにダウンロード
                 st.download_button(
-                    label="📥 スマホに画像を保存する",
+                    label="📥 画像を写真フォルダに保存",
                     data=buffer.tobytes(),
-                    file_name="pose_alignment.jpg",
+                    file_name="pose_check.jpg",
                     mime="image/jpeg"
                 )
+        else:
+            st.warning("画像が取得できませんでした。カメラに全身が映っていることを確認してください。")
