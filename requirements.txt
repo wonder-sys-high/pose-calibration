@@ -2,3 +2,4 @@ streamlit
 streamlit-webrtc
 opencv-python-headless
 mediapipe==0.10.14
+tornado==6.2
