@@ -10,7 +10,7 @@ import time
 from mediapipe.python.solutions import pose as mp_pose
 from mediapipe.python.solutions import drawing_utils as mp_drawing
 
-# カメラのフラッシュ効果（画面を白く光らせる）
+# カメラのフラッシュ効果（視覚的なシャッター）
 def play_shutter_effect():
     st.markdown(
         """
@@ -48,8 +48,8 @@ pose = mp_pose.Pose(
 )
 
 st.title("姿勢キャリブレーション")
-st.markdown("### リアルタイム・ガイド撮影")
-st.info("💡 **【使い方】**\n画面の**ブルーの縦線**に、あなたの耳・肩・腰が重なるように調整してください。オレンジの線がまっすぐになれば理想的です。")
+st.markdown("### リアルタイム・ガイド撮影 ＆ 医学的リセット")
+st.info("💡 **【使い方】**\n画面の**ブルーの縦線**に耳・肩・腰が重なるように調整してください。オレンジの線がまっすぐになれば理想的です。")
 
 def video_frame_callback(frame):
     img = frame.to_ndarray(format="bgr24")
@@ -57,13 +57,12 @@ def video_frame_callback(frame):
     
     results = pose.process(img_rgb)
     
-    # 診断用の変数を初期化
     head_forward = 0
     body_forward = 0
     w = img.shape[1]
 
     if results.pose_landmarks:
-        # 背景の骨格点は極細に（グレー）
+        # 背景の骨格点は極細に
         mp_drawing.draw_landmarks(
             img, 
             results.pose_landmarks, 
@@ -72,26 +71,19 @@ def video_frame_callback(frame):
             mp_drawing.DrawingSpec(color=(150, 150, 150), thickness=1, circle_radius=1)
         )
 
-        # 関節ポイントの取得（左半身を基準）
         landmarks = results.pose_landmarks.landmark
-        ear = landmarks[mp_pose.PoseLandmark.LEFT_EAR.value]
-        shoulder = landmarks[mp_pose.PoseLandmark.LEFT_SHOULDER.value]
-        hip = landmarks[mp_pose.PoseLandmark.LEFT_HIP.value]
-        knee = landmarks[mp_pose.PoseLandmark.LEFT_KNEE.value]
-        ankle = landmarks[mp_pose.PoseLandmark.LEFT_ANKLE.value]
-
         h, _, _ = img.shape
         def to_px(landmark):
             return (int(landmark.x * w), int(landmark.y * h))
 
-        p_ear = to_px(ear)
-        p_shoulder = to_px(shoulder)
-        p_hip = to_px(hip)
-        p_knee = to_px(knee)
-        p_ankle = to_px(ankle)
+        p_ear = to_px(landmarks[mp_pose.PoseLandmark.LEFT_EAR.value])
+        p_shoulder = to_px(landmarks[mp_pose.PoseLandmark.LEFT_SHOULDER.value])
+        p_hip = to_px(landmarks[mp_pose.PoseLandmark.LEFT_HIP.value])
+        p_knee = to_px(landmarks[mp_pose.PoseLandmark.LEFT_KNEE.value])
+        p_ankle = to_px(landmarks[mp_pose.PoseLandmark.LEFT_ANKLE.value])
 
+        # ズレの計算
         facing_left = p_ear[0] < p_shoulder[0] 
-        
         if facing_left:
             head_forward = p_shoulder[0] - p_ear[0] 
             body_forward = p_hip[0] - p_shoulder[0] 
@@ -99,41 +91,27 @@ def video_frame_callback(frame):
             head_forward = p_ear[0] - p_shoulder[0] 
             body_forward = p_shoulder[0] - p_hip[0] 
 
-        # --- ガイドラインの描画（より細くスタイリッシュに） ---
-        # 1. 理想の垂直ライン（ブルー）: 極細の 1 に変更
+        # ガイドラインの描画
         cv2.line(img, (p_hip[0], 0), (p_hip[0], h), (255, 150, 50), 1)
-        
-        # 2. 現在の骨格ライン（オレンジ）: 細めの 2 に変更
-        line_color = (50, 100, 255)
-        line_thickness = 2
-        cv2.line(img, p_ear, p_shoulder, line_color, line_thickness)
-        cv2.line(img, p_shoulder, p_hip, line_color, line_thickness)
-        cv2.line(img, p_hip, p_knee, line_color, line_thickness)
-        cv2.line(img, p_knee, p_ankle, line_color, line_thickness)
+        line_color, line_thick = (50, 100, 255), 2
+        for start, end in [(p_ear, p_shoulder), (p_shoulder, p_hip), (p_hip, p_knee), (p_knee, p_ankle)]:
+            cv2.line(img, start, end, line_color, line_thick)
 
-    # 撮影用に画像と「診断データ」をセットにしてキューに保存
     if not frame_queue.empty():
-        try:
-            frame_queue.get_nowait()
-        except queue.Empty:
-            pass
+        try: frame_queue.get_nowait()
+        except queue.Empty: pass
     frame_queue.put((img, head_forward, body_forward, w))
-
     return av.VideoFrame.from_ndarray(img, format="bgr24")
 
-# リアルタイムカメラ起動
 webrtc_ctx = webrtc_streamer(
-    key="pose-calibration-live", 
+    key="pose-calibration-final", 
     video_frame_callback=video_frame_callback,
     rtc_configuration={"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]},
     media_stream_constraints={"video": True, "audio": False}
 )
 
-# 撮影・診断結果の表示
 if webrtc_ctx.state.playing:
     st.markdown("---")
-    st.write("📸 撮影方法を選んでください")
-    
     col1, col2 = st.columns(2)
     with col1:
         btn_now = st.button("即座に撮影する", type="primary", use_container_width=True)
@@ -142,59 +120,54 @@ if webrtc_ctx.state.playing:
 
     if btn_now or btn_timer:
         if btn_timer:
-            countdown_placeholder = st.empty()
+            cp = st.empty()
             for i in range(30, 0, -1):
-                countdown_placeholder.markdown(f"<h2 style='text-align: center; color: red;'>撮影まであと {i} 秒...</h2>", unsafe_allow_html=True)
+                cp.markdown(f"<h2 style='text-align: center; color: red;'>撮影まであと {i} 秒...</h2>", unsafe_allow_html=True)
                 time.sleep(1)
-            countdown_placeholder.empty()
+            cp.empty()
 
-        # 音の代わりに画面全体を白くフラッシュさせる
         play_shutter_effect()
-        st.toast("カシャッ！撮影しました📸")
+        st.toast("撮影完了📸")
 
         if not frame_queue.empty():
             snapshot, head_forward, body_forward, img_w = frame_queue.get()
-            
-            is_success, buffer = cv2.imencode(".jpg", snapshot)
-            if is_success:
-                st.image(snapshot, channels="BGR", caption="撮影されたデータ（主観と客観の比較）")
-                
-                st.download_button(
-                    label="📥 画像を写真フォルダに保存",
-                    data=buffer.tobytes(),
-                    file_name="pose_check.jpg",
-                    mime="image/jpeg"
-                )
+            st.image(snapshot, channels="BGR", caption="撮影された客観データ")
+            st.download_button(label="📥 画像を保存", data=cv2.imencode(".jpg", snapshot)[1].tobytes(), file_name="pose_check.jpg", mime="image/jpeg")
 
-                # --- 診断レポート出力 ---
-                st.markdown("## 📊 詳細診断レポート")
-                threshold = img_w * 0.04 
+            # --- 医学的根拠に基づく詳細診断 ＆ リセットアクション ---
+            st.markdown("## 📊 詳細診断 ＆ 1分間リセット")
+            threshold = img_w * 0.04 
 
-                # 1. 首・頭の判定
-                st.markdown("### 1. ストレートネック度（頭の突出）")
-                if head_forward > threshold * 1.5:
-                    st.error("⚠️ 重度：基準より頭がかなり前に出ています")
-                    st.write("首の筋肉だけで重い頭（約5kg）を必死に支えている状態です。")
-                elif head_forward > threshold:
-                    st.warning("🟡 軽度：基準より頭が少し前に出ています")
-                    st.write("画面に引き寄せられ、首に負担がかかり始めています。")
-                elif head_forward < -threshold:
-                    st.warning("🟡 引きすぎ：顎を引きすぎて首が詰まっています")
-                else:
-                    st.success("✨ 正常：理想的な位置です")
-                    st.write("頭の重さが正しく分散され、首への負担が最小限に抑えられています。")
+            # 1. 首の診断
+            st.markdown("### ① 首・頭の状態")
+            if head_forward > threshold:
+                st.error("⚠️ ストレートネック（頭部前傾）")
+                st.info("""
+                **[span_0](start_span)[span_1](start_span)💡 1分リセット：チンイン（あご引き）エクササイズ**[span_0](end_span)[span_1](end_span)
+                あごを軽く引き、後頭部を後ろに押し込み8秒キープ。これを繰り返すことで首の深層筋を活性化します。
+                [span_2](start_span)さらに、大胸筋（胸）を広げるストレッチを組み合わせるとより効果的です[span_2](end_span)。
+                """)
+                # 
+            else:
+                st.success("✨ ニュートラルな首位置です")
 
-                # 2. 腰・背中の判定
-                st.markdown("### 2. 腰・背中のバランス")
-                if body_forward < -threshold:
-                    st.error("⚠️ 過緊張：肩が腰より極端に後ろにあります（反り腰）")
-                    st.write("「姿勢を良くしよう」と胸を張りすぎ・背中を反りすぎている勘違いエラーです。")
-                elif body_forward > threshold:
-                    st.warning("🟡 脱力過多：肩が腰より前に出ています（猫背）")
-                    st.write("骨盤が後ろに倒れ、背中が丸まっています。呼吸が浅くなりやすい状態です。")
-                else:
-                    st.success("✨ 正常：ニュートラルでリラックスした状態です")
-                    st.write("無駄な筋肉の力みを使わず、骨格だけで効率よく身体を支えられています。")
-                    
-        else:
-            st.warning("画像が取得できませんでした。カメラに全身が映っていることを確認してください。")
+            # 2. 腰・骨盤の診断
+            st.markdown("### ② 腰・骨盤の状態")
+            if body_forward < -threshold:
+                st.error("⚠️ 反り腰・過緊張（骨盤前傾傾向）")
+                st.info("""
+                **[span_3](start_span)[span_4](start_span)💡 1分リセット：腸腰筋ストレッチ**[span_3](end_span)[span_4](end_span)
+                片膝立ちになり、腰を反らさないよう注意して体重を前に移動。後ろ脚の付け根を30秒伸ばします。
+                [span_5](start_span)[span_6](start_span)また、四つん這いで背中を丸める「キャットポーズ」も腰の緊張緩和に有効です[span_5](end_span)[span_6](end_span)。
+                """)
+                # 
+            elif body_forward > threshold:
+                st.warning("🟡 猫背・骨盤後傾（脱力過多）")
+                st.info("""
+                **[span_7](start_span)💡 1分リセット：タオルによる骨盤リセット**[span_7](end_span)
+                丸めたバスタオルをお尻の骨（坐骨）のすぐ後ろに敷いて座ってください。物理的に骨盤を立てる感覚を体に覚え込ませます。
+                [span_8](start_span)あわせて肩甲骨を中央にギュッと寄せる運動も行いましょう[span_8](end_span)。
+                """)
+                # 
+            else:
+                st.success("✨ 理想的なバランスです")
