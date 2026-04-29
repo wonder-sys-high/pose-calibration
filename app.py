@@ -10,7 +10,7 @@ import time
 from mediapipe.python.solutions import pose as mp_pose
 from mediapipe.python.solutions import drawing_utils as mp_drawing
 
-# カメラのフラッシュ効果（視覚的なシャッター）
+# カメラのフラッシュ効果
 def play_shutter_effect():
     st.markdown(
         """
@@ -32,14 +32,12 @@ def play_shutter_effect():
         unsafe_allow_html=True
     )
 
-# フレームと診断用データを一時保存する箱
 @st.cache_resource
 def get_frame_queue():
     return queue.Queue(maxsize=1)
 
 frame_queue = get_frame_queue()
 
-# AIモデルの初期化（レベル1）
 pose = mp_pose.Pose(
     static_image_mode=False,
     min_detection_confidence=0.5,
@@ -48,7 +46,7 @@ pose = mp_pose.Pose(
 )
 
 st.title("姿勢キャリブレーション")
-st.markdown("### リアルタイム・ガイド撮影 ＆ 医学的リセット")
+st.markdown("### リアルタイム・ガイド撮影")
 st.info("💡 **【使い方】**\n画面の**ブルーの縦線**に耳・肩・腰が重なるように調整してください。オレンジの線がまっすぐになれば理想的です。")
 
 def video_frame_callback(frame):
@@ -62,7 +60,6 @@ def video_frame_callback(frame):
     w = img.shape[1]
 
     if results.pose_landmarks:
-        # 背景の骨格点は極細に
         mp_drawing.draw_landmarks(
             img, 
             results.pose_landmarks, 
@@ -82,7 +79,6 @@ def video_frame_callback(frame):
         p_knee = to_px(landmarks[mp_pose.PoseLandmark.LEFT_KNEE.value])
         p_ankle = to_px(landmarks[mp_pose.PoseLandmark.LEFT_ANKLE.value])
 
-        # ズレの計算
         facing_left = p_ear[0] < p_shoulder[0] 
         if facing_left:
             head_forward = p_shoulder[0] - p_ear[0] 
@@ -91,7 +87,6 @@ def video_frame_callback(frame):
             head_forward = p_ear[0] - p_shoulder[0] 
             body_forward = p_shoulder[0] - p_hip[0] 
 
-        # ガイドラインの描画
         cv2.line(img, (p_hip[0], 0), (p_hip[0], h), (255, 150, 50), 1)
         line_color, line_thick = (50, 100, 255), 2
         for start, end in [(p_ear, p_shoulder), (p_shoulder, p_hip), (p_hip, p_knee), (p_knee, p_ankle)]:
@@ -134,40 +129,43 @@ if webrtc_ctx.state.playing:
             st.image(snapshot, channels="BGR", caption="撮影された客観データ")
             st.download_button(label="📥 画像を保存", data=cv2.imencode(".jpg", snapshot)[1].tobytes(), file_name="pose_check.jpg", mime="image/jpeg")
 
-            # --- 医学的根拠に基づく詳細診断 ＆ リセットアクション ---
-            st.markdown("## 📊 詳細診断 ＆ 1分間リセット")
+            # --- 超・直感的な詳細診断 ＆ 1分リセット ---
+            st.markdown("## 📊 診断結果 ＆ 1分リセット")
             threshold = img_w * 0.04 
 
             # 1. 首の診断
-            st.markdown("### ① 首・頭の状態")
+            st.markdown("### ① 首の位置")
             if head_forward > threshold:
-                st.error("⚠️ ストレートネック（頭部前傾）")
+                st.error("⚠️ 首が前に出ています（ストレートネック）")
+                st.write("約5kgもある重い頭を、首の筋肉だけで必死に支えている状態です。")
                 st.info("""
-                **[span_0](start_span)[span_1](start_span)💡 1分リセット：チンイン（あご引き）エクササイズ**[span_0](end_span)[span_1](end_span)
-                あごを軽く引き、後頭部を後ろに押し込み8秒キープ。これを繰り返すことで首の深層筋を活性化します。
-                [span_2](start_span)さらに、大胸筋（胸）を広げるストレッチを組み合わせるとより効果的です[span_2](end_span)。
+                **💡 1分リセット：壁ピタッ！体操**
+                1. 壁に「かかと・お尻・肩甲骨」をピタッとつけて立ちます。
+                2. そのまま「後頭部」も壁にくっつけて5秒キープ。（目線はまっすぐ）
+                3. これを3回！正しい首の位置を体が思い出します。
                 """)
-                # 
             else:
-                st.success("✨ ニュートラルな首位置です")
+                st.success("✨ まっすぐな良い首です！")
 
             # 2. 腰・骨盤の診断
-            st.markdown("### ② 腰・骨盤の状態")
+            st.markdown("### ② 腰・背中の位置")
             if body_forward < -threshold:
-                st.error("⚠️ 反り腰・過緊張（骨盤前傾傾向）")
+                st.error("⚠️ 腰が反りすぎています（反り腰）")
+                st.write("良い姿勢を作ろうとして、無意識に腰を反らして力んでいる状態です。")
                 st.info("""
-                **[span_3](start_span)[span_4](start_span)💡 1分リセット：腸腰筋ストレッチ**[span_3](end_span)[span_4](end_span)
-                片膝立ちになり、腰を反らさないよう注意して体重を前に移動。後ろ脚の付け根を30秒伸ばします。
-                [span_5](start_span)[span_6](start_span)また、四つん這いで背中を丸める「キャットポーズ」も腰の緊張緩和に有効です[span_5](end_span)[span_6](end_span)。
+                **💡 1分リセット：赤ちゃんポーズ**
+                1. 仰向けにゴロンと寝転がります。
+                2. 両膝を両手で抱え込み、胸にギューッと引き寄せます。（腰が丸まるのを感じます）
+                3. そのまま20秒深呼吸！ガチガチに緊張した腰が一気にリセットされます。
                 """)
-                # 
             elif body_forward > threshold:
-                st.warning("🟡 猫背・骨盤後傾（脱力過多）")
+                st.warning("🟡 背中が丸まっています（猫背）")
+                st.write("骨盤が後ろに倒れてしまい、お腹が縮こまっている状態です。")
                 st.info("""
-                **[span_7](start_span)💡 1分リセット：タオルによる骨盤リセット**[span_7](end_span)
-                丸めたバスタオルをお尻の骨（坐骨）のすぐ後ろに敷いて座ってください。物理的に骨盤を立てる感覚を体に覚え込ませます。
-                [span_8](start_span)あわせて肩甲骨を中央にギュッと寄せる運動も行いましょう[span_8](end_span)。
+                **💡 1分リセット：お尻にタオル作戦**
+                1. バスタオルを固く丸めて「太い筒」を作ります。
+                2. 椅子に座る時、お尻の【後ろ半分だけ】にタオルを踏むように敷きます。
+                3. タオルが「くさび」になり、頑張らなくても勝手に背筋がピンと伸びます！
                 """)
-                # 
             else:
-                st.success("✨ 理想的なバランスです")
+                st.success("✨ 理想的なバランスです！")
