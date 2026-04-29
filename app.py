@@ -16,12 +16,12 @@ def get_frame_queue():
 
 frame_queue = get_frame_queue()
 
-# AIモデルの初期化（リアルタイム性を優先してモデルレベル1を使用）
+# AIモデルの初期化（★メモリー不足を防ぐため、最も軽量な「0」に変更）
 pose = mp_pose.Pose(
     static_image_mode=False,
     min_detection_confidence=0.5,
     min_tracking_confidence=0.5,
-    model_complexity=1
+    model_complexity=0  
 )
 
 st.title("姿勢キャリブレーション")
@@ -64,11 +64,10 @@ def video_frame_callback(frame):
 
         # --- ガイドラインの描画（太め設定） ---
         
-        # 1. 理想の垂直ライン（ブルー：B,G,Rで指定）
-        # 腰のX座標を基準に、上下に太い垂直線を引く
+        # 1. 理想の垂直ライン（ブルー）
         cv2.line(img, (p_hip[0], 0), (p_hip[0], h), (255, 150, 50), 5)
         
-        # 2. あなたの現在の骨格ライン（オレンジ：B,G,Rで指定）
+        # 2. あなたの現在の骨格ライン（オレンジ）
         line_color = (50, 100, 255)
         line_thickness = 6
         cv2.line(img, p_ear, p_shoulder, line_color, line_thickness)
