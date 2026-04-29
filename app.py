@@ -4,6 +4,7 @@ import av
 import cv2
 import numpy as np
 import queue
+import time
 
 # MediaPipeの読み込み
 from mediapipe.python.solutions import pose as mp_pose
@@ -110,7 +111,24 @@ webrtc_ctx = webrtc_streamer(
 # 撮影・診断結果の表示
 if webrtc_ctx.state.playing:
     st.markdown("---")
-    if st.button("📸 この姿勢で撮影・診断する", type="primary"):
+    st.write("📸 撮影方法を選んでください")
+    
+    # 2つのボタンを横並びに配置
+    col1, col2 = st.columns(2)
+    with col1:
+        btn_now = st.button("即座に撮影する", type="primary", use_container_width=True)
+    with col2:
+        btn_timer = st.button("⏱ 30秒タイマー", type="secondary", use_container_width=True)
+
+    if btn_now or btn_timer:
+        if btn_timer:
+            countdown_placeholder = st.empty()
+            for i in range(30, 0, -1):
+                # 離れていても見えるように大きく赤色で表示
+                countdown_placeholder.markdown(f"<h2 style='text-align: center; color: red;'>撮影まであと {i} 秒...</h2>", unsafe_allow_html=True)
+                time.sleep(1)
+            countdown_placeholder.empty()
+
         if not frame_queue.empty():
             # キューから画像と診断データを取り出す
             snapshot, head_forward, body_forward, img_w = frame_queue.get()
